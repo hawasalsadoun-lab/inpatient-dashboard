@@ -98,7 +98,7 @@ body{font-family:Arial,sans-serif;background:#F0F4F8;padding:16px;direction:rtl;
   <br>
   <div class="field">
     <label>عدد الحالات التي تابعتِها اليوم</label>
-    <input type="number" id="patients-count" placeholder="0" min="0"/>
+    <input type="number" id="patients-count" placeholder="0" min="0" oninput="updateHisPct()"/>
   </div>
   <div class="field">
     <label>أعداد الخروج للمراجعين اليوم</label>
@@ -132,12 +132,19 @@ body{font-family:Arial,sans-serif;background:#F0F4F8;padding:16px;direction:rtl;
     <textarea id="extra-notes" placeholder="أي ملاحظات أو طلبات..."></textarea>
   </div>
   <div class="field">
-    <label>التوثيق في HIS</label>
-    <select id="his-documented">
-      <option value="نعم — بالكامل">نعم — بالكامل ✅</option>
-      <option value="نعم — جزئياً">نعم — جزئياً</option>
-      <option value="لا">لا</option>
-    </select>
+    <label>عدد المرضى الموثَّقين في HIS</label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="number" id="his-documented" min="0" max="100" value="0" placeholder="0"
+        oninput="updateHisPct()"
+        style="width:90px;font-size:18px;font-weight:700;text-align:center;padding:8px;border:0.5px solid #ddd;border-radius:7px;flex-shrink:0"/>
+      <div style="flex:1">
+        <div style="font-size:10px;color:#888;margin-bottom:4px">من أصل <strong id="his-total-lbl">—</strong> مريض متابَع</div>
+        <div style="background:#eee;border-radius:20px;height:8px;overflow:hidden">
+          <div id="his-bar" style="height:100%;width:0%;border-radius:20px;background:#185FA5;transition:width 0.3s"></div>
+        </div>
+        <div id="his-pct-lbl" style="font-size:11px;font-weight:700;color:#185FA5;margin-top:3px">—</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -230,30 +237,41 @@ const COMPLAINT_TYPES = {
 function addComplaint() {
   complaintCount++;
   const id = 'c' + complaintCount;
-  
-  const typeOptions = Object.keys(COMPLAINT_TYPES).map(t => 
-    `<option value="${t}">${COMPLAINT_TYPES[t].icon} ${t}</option>`
+
+  const typeOptions = Object.keys(COMPLAINT_TYPES).map(t =>
+    '<option value="' + t + '">' + COMPLAINT_TYPES[t].icon + ' ' + t + '</option>'
   ).join('');
+
+  const resolvedHTML =
+    '<div class="sub-field" style="background:#FFF0F8;border-radius:7px;padding:8px 10px;border:0.5px solid #F5C6E0;margin-top:6px">' +
+    '<label style="font-size:10px;color:#7A1A4A;font-weight:700;display:block;margin-bottom:3px">🔄 هل تم حل هذه الشكوى؟</label>' +
+    '<select id="resolved-' + id + '" style="width:100%;font-size:11px;padding:6px 8px;border:0.5px solid #F5C6E0;border-radius:6px;font-family:Arial;direction:rtl;background:#fff">' +
+    '<option value="">اختر الحالة</option>' +
+    '<option value="محلولة ✅">محلولة ✅</option>' +
+    '<option value="غير محلولة ❌">غير محلولة ❌</option>' +
+    '<option value="قيد المتابعة 🔄">قيد المتابعة 🔄</option>' +
+    '</select></div>';
+
+  const bodyHTML =
+    '<div class="sub-field">' +
+    '<label style="font-size:10px;color:#666;display:block;margin-bottom:3px;font-weight:700">نوع المشكلة</label>' +
+    '<select id="type-' + id + '" onchange="updateComplaintFields(\'' + id + '\')" style="width:100%;font-size:11px;padding:6px 8px;border:0.5px solid #ddd;border-radius:6px;font-family:Arial;direction:rtl;background:#fff">' +
+    '<option value="">اختر نوع المشكلة</option>' +
+    typeOptions +
+    '</select></div>' +
+    '<div id="dynamic-fields-' + id + '"></div>' +
+    resolvedHTML;
 
   const div = document.createElement('div');
   div.className = 'complaint-section';
   div.id = id;
-  div.innerHTML = `
-    <div class="complaint-header" onclick="toggleComplaint('${id}')">
-      <span class="complaint-type" id="title-${id}">شكوى جديدة</span>
-      <button class="remove-btn" onclick="event.stopPropagation();removeComplaint('${id}')">✕</button>
-    </div>
-    <div class="complaint-body open" id="body-${id}">
-      <div class="sub-field">
-        <label>نوع المشكلة</label>
-        <select id="type-${id}" onchange="updateComplaintFields('${id}')">
-          <option value="">اختر نوع المشكلة</option>
-          ${typeOptions}
-        </select>
-      </div>
-      <div id="dynamic-fields-${id}"></div>
-    </div>`;
-  
+  div.innerHTML =
+    '<div class="complaint-header" onclick="toggleComplaint(\'' + id + '\')">' +
+    '<span class="complaint-type" id="title-' + id + '">شكوى جديدة</span>' +
+    '<button class="remove-btn" onclick="event.stopPropagation();removeComplaint(\'' + id + '\')">✕</button>' +
+    '</div>' +
+    '<div class="complaint-body open" id="body-' + id + '">' + bodyHTML + '</div>';
+
   document.getElementById('complaints-list').appendChild(div);
   updateCounter();
 }
@@ -301,7 +319,9 @@ function updateCounter() {
 function getComplaintsData() {
   const items = document.getElementById('complaints-list').children;
   const result = [];
+  let index = 0;
   for (let item of items) {
+    index++;
     const id = item.id;
     const type = document.getElementById('type-' + id)?.value;
     if (!type) continue;
@@ -311,9 +331,29 @@ function getComplaintsData() {
       const el = document.getElementById(f.id + '-' + id);
       if (el) entry[f.id] = el.value;
     });
+    // Include resolved status for ALL complaints
+    const resolvedEl = document.getElementById('resolved-' + id);
+    if (resolvedEl) entry.resolved = resolvedEl.value || '';
     result.push(entry);
   }
   return result;
+}
+
+function updateHisPct() {
+  const hisVal = parseInt(document.getElementById('his-documented').value) || 0;
+  const totalVal = parseInt(document.getElementById('patients-count').value) || 0;
+  const bar = document.getElementById('his-bar');
+  const lbl = document.getElementById('his-pct-lbl');
+  const totalLbl = document.getElementById('his-total-lbl');
+  if (totalLbl) totalLbl.textContent = totalVal > 0 ? totalVal : '—';
+  if (totalVal > 0) {
+    const pct = Math.min(100, Math.round((hisVal / totalVal) * 100));
+    if (bar) { bar.style.width = pct + '%'; bar.style.background = pct >= 90 ? '#1D9E75' : pct >= 60 ? '#EF9F27' : '#E24B4A'; }
+    if (lbl) { lbl.textContent = pct + '% موثَّق'; lbl.style.color = pct >= 90 ? '#1D9E75' : pct >= 60 ? '#B45A00' : '#A32D2D'; }
+  } else {
+    if (bar) bar.style.width = '0%';
+    if (lbl) lbl.textContent = hisVal > 0 ? hisVal + ' مريض موثَّق' : '—';
+  }
 }
 
 function exportReport() {
@@ -337,7 +377,8 @@ function exportReport() {
     complaints: complaintsData,
     escalated: document.getElementById('escalated').value,
     extraNotes: document.getElementById('extra-notes').value,
-    hisDocumented: document.getElementById('his-documented').value,
+    hisDocumented: document.getElementById('his-documented').value || '0',
+    hisTotalPatients: document.getElementById('patients-count').value || '0',
     exportedAt: new Date().toLocaleString('ar-SA')
   };
 
@@ -346,14 +387,15 @@ function exportReport() {
   if (data.complaints.length > 0) {
     data.complaints.forEach((c, i) => {
       const icon = COMPLAINT_TYPES[c.type]?.icon || '📝';
+      const resolvedBadge = c.resolved ? `<div style="margin-top:6px"><span style="background:${c.resolved.includes('✅')?'#EAF3DE':c.resolved.includes('❌')?'#FDECEA':'#FEF3E2'};color:${c.resolved.includes('✅')?'#27500A':c.resolved.includes('❌')?'#8B1A1A':'#7A3F00'};padding:2px 10px;border-radius:4px;font-size:10px;font-weight:700">${c.resolved}</span></div>` : '';
       let rows = `<div class="r-row"><span class="r-label">نوع المشكلة</span><span class="r-val">${icon} ${c.type}</span></div>`;
       Object.entries(c).forEach(([k, v]) => {
-        if (k !== 'type' && v) {
+        if (k !== 'type' && k !== 'resolved' && v) {
           const labels = { dept:'القسم', ward:'الجناح/الغرفة', room:'الغرفة', issue:'التفاصيل', detail:'التفاصيل', action:'الإجراء', time:'الوقت', type:'النوع', patient:'المريض', status:'الحالة', location:'الموقع', title:'الموضوع' };
           rows += `<div class="r-row"><span class="r-label">${labels[k]||k}</span><span class="r-val">${v}</span></div>`;
         }
       });
-      complaintsHTML += `<div class="c-item"><div class="c-header">${icon} ${c.type}</div>${rows}</div>`;
+      complaintsHTML += `<div class="c-item"><div class="c-header">${icon} ${c.type}</div>${rows}${resolvedBadge}</div>`;
     });
   } else {
     complaintsHTML = '<p style="color:#aaa;font-size:12px;padding:8px 0">لا توجد شكاوى مسجلة</p>';
@@ -362,6 +404,10 @@ function exportReport() {
   const tasksHTML = data.tasks.length > 0 
     ? data.tasks.map(t => `<span class="task-tag">${t}</span>`).join('')
     : '<span style="color:#aaa;font-size:12px">لا يوجد</span>';
+
+  const hisPct = data.hisTotalPatients > 0 ? Math.round((parseInt(data.hisDocumented||0)/parseInt(data.hisTotalPatients))*100) : null;
+  const hisDisplay = hisPct !== null ? data.hisDocumented + ' مريض (' + hisPct + '%)' : data.hisDocumented + ' مريض';
+  const hisColor = hisPct !== null ? (hisPct >= 90 ? '#1D9E75' : hisPct >= 60 ? '#B45A00' : '#A32D2D') : '#185FA5';
 
   const reportHTML = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -437,7 +483,7 @@ body{font-family:Arial,sans-serif;background:#F0F4F8;padding:20px;direction:rtl;
 <div class="r-card">
   <div class="r-card-title">📋 معلومات إضافية</div>
   <div class="r-row"><span class="r-label">التصعيد للإدارة</span><span class="r-val">${data.escalated}</span></div>
-  <div class="r-row"><span class="r-label">التوثيق في HIS</span><span class="r-val">${data.hisDocumented}</span></div>
+  <div class="r-row"><span class="r-label">التوثيق في HIS</span><span class="r-val" style="color:${hisColor};font-weight:700">${hisDisplay}</span></div>
   <div class="r-row"><span class="r-label">ملاحظات للإدارة</span><span class="r-val">${data.extraNotes||'—'}</span></div>
 </div>
 
